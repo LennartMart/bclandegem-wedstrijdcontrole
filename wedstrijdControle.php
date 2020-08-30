@@ -10,6 +10,7 @@ require 'PHPMailer/PHPMailerAutoload.php';
 
 
 $matchenUitUrls = parseBadmintonVlaanderenUrls(unserialize(BADMINTONVLAANDEREN_URLS));
+$ploegen = unserialize(PLOEGEN);
 
 $huidigTijdstip = new DateTime("now",new DateTimeZone('Europe/Brussels'));
 $fouten = array();
@@ -24,7 +25,9 @@ foreach ($matchenUitUrls as $match)
 			//Thuisploeg
 			if(empty($match->uitslag))
 			{
-				$fouten[] = "<li> <a href='" .  $match->link ."'>" . $match->getTitelMatch() . "</a> is nog niet ingevuld.</li>";
+				$ploeg = vindPloeg($ploegen, $match->thuisPloeg);
+				$ploeg->fouten[] ="<li> <a href='" .  $match->link ."'>" . $match->getTitelMatch() . "</a> is nog niet ingevuld.</li>";
+				
 			}
 		}
 		else
@@ -32,19 +35,21 @@ foreach ($matchenUitUrls as $match)
 			//Uitploeg
 			if(!empty($match->uitslag) && $match->goedgekeurd == false)
 			{
-				$fouten[] = "<li> <a href='" .  $match->link ."'>" . $match->getTitelMatch() . "</a> is nog niet bevestigd.</li>";
+				$ploeg = vindPloeg($ploegen, $match->uitPloeg);
+				$ploeg->fouten[] = "<li> <a href='" .  $match->link ."'>" . $match->getTitelMatch() . "</a> is nog niet bevestigd.</li>";
 			}
 		}
 	}
 }
-
-if(!empty($fouten))
-{
-	sendMail($fouten);
-}
-else
-{
-	echo "Geen fouten gevonden!";
+foreach($ploegen as $ploeg) {
+	if(!empty($ploeg->fouten))
+	{
+		sendMail($ploeg);
+	}
+	else
+	{
+		echo "Geen fouten gevonden voor " . $ploeg->ploegNaam . " <br/>";
+	}
 }
 	
 	
@@ -59,6 +64,7 @@ function parseBadmintonVlaanderenUrls($badmintonUrls)
         $html = file_get_html($url);
         //Haal alle rijen op in de wedstrijden tabel
         $rijen = $html->find('table[class=ruler] tr');
+        
 		if(empty($rijen))
 		{
 			//Tijdelijk geen e-mail sturen - tabellen zijn gewoon leeg
@@ -114,7 +120,7 @@ function parseBadmintonVlaanderenUrls($badmintonUrls)
 }
 
 
-function sendMail($fouten)
+function sendMail($ploeg)
 {
     $mail = new PHPMailer;
     $mail->isSMTP();                                      // Set mailer to use SMTP
@@ -125,19 +131,21 @@ function sendMail($fouten)
     $mail->SMTPSecure = 'tls';                            // Enable encryption, 'ssl' also accepted
     $mail->Port = 587;                                    //Set the SMTP port number - 587 for authenticated TLS
     $mail->setFrom(EMAIL_USERNAME, 'Wedstrijdcontrole competitie');     //Set who the message is to be sent from
-    $recepients = unserialize(EMAIL_ONTVANGERS);
-    foreach ($recepients as $recepient) {
-        $mail->addAddress($recepient);
+
+	$mail->addAddress($ploeg->email);
+    $ontvangers = unserialize(EMAIL_ONTVANGERS);
+    foreach ($ontvangers as $ontvanger) {
+		$mail->addAddress($ontvanger);
     }
     $mail->WordWrap = 50;                                 // Set word wrap to 50 characters
     $mail->isHTML(true);                                  // Set email format to HTML
 
     $mail->Subject = 'Actie vereist op Badminton Vlaanderen';
-    $bodyText = 'Beste, <br/><br/>Er zijn enkele matchen die aandacht vereisen: <br/><br/><ul>';
-    foreach ($fouten as $fout) {
+    $bodyText = 'Beste ' . $ploeg->kapitein . ', <br/><br/>Er zijn één of meerdere matchen die aandacht vereisen: <br/><br/><ul>';
+    foreach ($ploeg->fouten as $fout) {
         $bodyText = $bodyText . $fout;
     }
-    $bodyText = $bodyText . "</ul><br/>Met vriendelijke groeten,<br/><br/>Wedstrijdcontrole service";
+    $bodyText = $bodyText . "</ul><br/>Met vriendelijke groeten,<br/><br/>BC Landegem - Wedstrijdcontrole Service";
 
     $mail->Body    = $bodyText;
     $mail->AltBody = 'Er zijn enkele waarschuwingen. Bezoek www.badmintonvlaanderen.be en controleer de matchen.';
@@ -148,8 +156,18 @@ function sendMail($fouten)
         exit;
     }
 
-    echo 'Message has been sent';
+    echo 'Bericht goed verzonden! <br/>';
 }
+
+function vindPloeg($ploegen, $ploegNaam){
+	foreach($ploegen as $ploeg) {
+		if ($ploegNaam == $ploeg->ploegNaam) {
+			return $ploeg;
+		}	
+	}
+	return null;
+}
+
 class Match
 {
     public $tijdstip;
